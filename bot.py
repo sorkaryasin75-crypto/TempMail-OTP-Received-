@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import string
 import requests
@@ -27,12 +28,10 @@ def get_domain():
 
 def create_mail_tm_account():
     domain = get_domain()
-    # র্যান্ডম ইউজারনেম ও পাসওয়ার্ড জেনারেট
     rand_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     email = f"user_{rand_str}@{domain}"
     password = f"Pass_{rand_str}!"
 
-    # অ্যাকাউন্ট রেজিস্টার
     acc_res = requests.post(
         f"{BASE_URL}/accounts",
         json={"address": email, "password": password},
@@ -42,7 +41,6 @@ def create_mail_tm_account():
     if acc_res.status_code not in [200, 201]:
         raise Exception(f"Account creation failed: {acc_res.status_code}")
 
-    # অথেনটিকেশন টোকেন সংগ্রহ
     token_res = requests.post(
         f"{BASE_URL}/token",
         json={"address": email, "password": password},
@@ -69,6 +67,16 @@ def get_message_detail(msg_id, token):
         return res.json()
     return {}
 
+# ----------------- OTP Extractor Function ----------------- #
+
+def extract_otp(subject, body):
+    # ৪ থেকে ৮ ডিজিটের যেকোনো পিন/ওটিপি কোড খুঁজে বের করার Regex
+    full_text = f"{subject} {body}"
+    match = re.search(r'\b\d{4,8}\b', full_text)
+    if match:
+        return match.group(0)
+    return None
+
 # ----------------- UI & Inline Keyboards ----------------- #
 
 def get_main_menu(email_exists=False):
@@ -91,7 +99,7 @@ def send_welcome(message):
     has_email = chat_id in user_sessions
     bot.send_message(
         chat_id,
-        "<b>📬 Temp Mail Bot (Mail.tm Powered)</b>\n\nনিচের বাটন চেপে কার্যক্রম পরিচালনা করুন:",
+        "<b>📬 Temp OTP Receiver Bot</b>\n\nনিচের বাটন চেপে ইমেইল তৈরি করুন:",
         parse_mode="HTML",
         reply_markup=get_main_menu(has_email)
     )
@@ -110,7 +118,7 @@ def handle_callbacks(call):
             text = (
                 f"✅ <b>আপনার Temp Mail তৈরি হয়েছে!</b>\n\n"
                 f"<code>{email}</code>\n\n"
-                f"<i>👆 ইমেইলের ওপর ক্লিক করলেই কপি হয়ে যাবে।</i>"
+                f"<i>👆 ইমেইলের ওপর চাপ দিলেই কপি হয়ে যাবে।</i>"
             )
             bot.edit_message_text(
                 text, 
@@ -130,23 +138,35 @@ def handle_callbacks(call):
 
             messages = check_messages(session["token"])
             if not messages:
-                bot.send_message(chat_id, "📭 ইনবক্স এখনো খালি!")
+                bot.send_message(chat_id, "📭 ইনবক্স এখনো খালি! ওটিপি আসার পর রিফ্রেশ করুন।")
             else:
-                bot.send_message(chat_id, f"📩 <b>{len(messages)} টি ইমেইল পাওয়া গেছে!</b>", parse_mode="HTML")
                 for msg in messages:
                     detail = get_message_detail(msg['id'], session["token"])
                     
-                    sender = detail.get('from', {}).get('address', 'Unknown')
-                    subject = detail.get('subject', 'No Subject')
-                    body = detail.get('text', detail.get('intro', 'No Body Text'))
+                    sender = detail.get('from', {}).get('address', 'Unknown Service')
+                    subject = detail.get('subject', '')
+                    body = detail.get('text', detail.get('intro', ''))
                     
-                    mail_text = (
-                        f"📩 <b>নতুন ইমেইল!</b>\n\n"
-                        f"👤 <b>From:</b> {sender}\n"
-                        f"📌 <b>Subject:</b> {subject}\n"
-                        f"-----------------------------\n"
-                        f"{body}"
-                    )
+                    # OTP Extract করা
+                    otp_code = extract_otp(subject, body)
+                    
+                    if otp_code:
+                        mail_text = (
+                            f"🔑 <b>Your OTP Received!</b>\n\n"
+                            f"<code>{otp_code}</code>\n\n"
+                            f"👆 <i>ওটিপির ওপর চাপ দিলেই কপি হয়ে যাবে।</i>\n\n"
+                            f"👤 <b>From:</b> {sender}\n"
+                            f"📌 <b>Subject:</b> {subject}"
+                        )
+                    else:
+                        # যদি কোনো সাধারণ ইমেইল হয় যাতে সরাসরি সংখ্যাযুক্ত OTP নেই
+                        mail_text = (
+                            f"📩 <b>নতুন মেসেজ!</b>\n\n"
+                            f"👤 <b>From:</b> {sender}\n"
+                            f"📌 <b>Subject:</b> {subject}\n"
+                            f"📝 <b>Content:</b>\n{body[:300]}"
+                        )
+                    
                     bot.send_message(chat_id, mail_text, parse_mode="HTML")
 
         elif call.data == "delete_email":
@@ -168,5 +188,6 @@ def handle_callbacks(call):
 
 if __name__ == "__main__":
     bot.remove_webhook()
-    print("Bot is starting via Mail.tm API...")
+    print("Bot is running...")
     bot.infinity_polling(skip_pending=True)
+        
