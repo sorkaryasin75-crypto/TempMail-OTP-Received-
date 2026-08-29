@@ -1,193 +1,179 @@
 import os
 import re
-import random
-import string
+import time
 import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ⚠️ আপনার টেলিগ্রাম বট টোকেন দিন
+# ⚠️ আপনার টেলিগ্রাম বট টোকেন দিন (BotFather থেকে প্রাপ্ত)
 BOT_TOKEN = "8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18".strip()
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজার সেশন ডাটা সংরক্ষণের স্থান
+# ইউজার তথ্য সংরক্ষণের জন্য ডিকশনারি
 user_sessions = {}
 
-BASE_URL = "https://api.mail.tm"
+# ফ্রি পাবলিক SMS API Endpoint (Free Virtual Numbers)
+FREE_SMS_API = "https://raw.githubusercontent.com/httpJibon/Free-SMS-API/main/api.json"
 
-# ----------------- Mail.tm API Functions ----------------- #
+# ----------------- Helper Functions ----------------- #
 
-def get_domain():
-    res = requests.get(f"{BASE_URL}/domains", timeout=10)
-    if res.status_code == 200:
-        domains = res.json().get("hydra:member", [])
-        if domains:
-            return domains[0]['domain']
-    raise Exception("ডোমেইন সংগ্রহ করতে সমস্যা হয়েছে।")
-
-def create_mail_tm_account():
-    domain = get_domain()
-    rand_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    email = f"user_{rand_str}@{domain}"
-    password = f"Pass_{rand_str}!"
-
-    acc_res = requests.post(
-        f"{BASE_URL}/accounts",
-        json={"address": email, "password": password},
-        timeout=10
-    )
+def get_free_numbers():
+    """পাবলিক ফ্রি ভার্চুয়াল নম্বরগুলোর তালিকা আনে"""
+    try:
+        # বিকল্প ব্যাকআপ ফ্রি এপিআই রিসোর্স
+        res = requests.get("https://receive-sms-free.cc/api/v1/numbers", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("numbers", [])
+    except Exception:
+        pass
     
-    if acc_res.status_code not in [200, 201]:
-        raise Exception(f"Account creation failed: {acc_res.status_code}")
+    # ফলব্যাক ফিক্সড ফ্রি নম্বর লিস্ট (টেস্টিং এর জন্য)
+    return [
+        {"country": "🇺🇸 USA", "number": "+12025550143", "id": "us_1"},
+        {"country": "🇬🇧 UK", "number": "+447700900077", "id": "uk_1"},
+        {"country": "🇸🇪 Sweden", "number": "+46701234567", "id": "se_1"}
+    ]
 
-    token_res = requests.post(
-        f"{BASE_URL}/token",
-        json={"address": email, "password": password},
-        timeout=10
-    )
+def get_latest_otp(phone_number):
+    """উক্ত নম্বরে আসা সাম্প্রতিক ওটিপি মেসেজ ফিল্টার করে আনে"""
+    try:
+        # ফ্রি সার্ভিস ব্যাকএন্ডে রিকোয়েস্ট
+        url = f"https://receive-sms-free.cc/api/v1/messages?number={phone_number}"
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            messages = res.json().get("messages", [])
+            if messages:
+                latest_msg = messages[0].get("text", "")
+                # ৪ থেকে ৮ ডিজিটের OTP Regex দিয়ে খোঁজা
+                otp_match = re.search(r'\b\d{4,8}\b', latest_msg)
+                if otp_match:
+                    return otp_match.group(0), latest_msg
+                return None, latest_msg
+    except Exception as e:
+        print(f"Error fetching SMS: {e}")
     
-    if token_res.status_code == 200:
-        token = token_res.json().get("token")
-        return email, token
-    else:
-        raise Exception("Token generation failed.")
+    return None, None
 
-def check_messages(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    res = requests.get(f"{BASE_URL}/messages", headers=headers, timeout=10)
-    if res.status_code == 200:
-        return res.json().get("hydra:member", [])
-    return []
+# ----------------- UI Keyboards ----------------- #
 
-def get_message_detail(msg_id, token):
-    headers = {"Authorization": f"Bearer {token}"}
-    res = requests.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=10)
-    if res.status_code == 200:
-        return res.json()
-    return {}
-
-# ----------------- OTP Extractor Function ----------------- #
-
-def extract_otp(subject, body):
-    # ৪ থেকে ৮ ডিজিটের যেকোনো পিন/ওটিপি কোড খুঁজে বের করার Regex
-    full_text = f"{subject} {body}"
-    match = re.search(r'\b\d{4,8}\b', full_text)
-    if match:
-        return match.group(0)
-    return None
-
-# ----------------- UI & Inline Keyboards ----------------- #
-
-def get_main_menu(email_exists=False):
-    markup = InlineKeyboardMarkup(row_width=2)
-    if not email_exists:
-        markup.add(InlineKeyboardButton("🎲 Generate Email", callback_data="gen_email"))
-    else:
-        markup.add(
-            InlineKeyboardButton("🔄 Refresh Inbox", callback_data="check_mail"),
-            InlineKeyboardButton("🗑️ Delete Email", callback_data="delete_email")
-        )
-        markup.add(InlineKeyboardButton("🎲 Generate New Email", callback_data="gen_email"))
+def get_main_menu():
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton("📱 ফ্রি ভার্চুয়াল নম্বর নিন (Get Number)", callback_data="list_numbers")
+    )
     return markup
 
-# ----------------- Bot Message Handlers ----------------- #
+def get_number_menu(numbers):
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for item in numbers[:6]: # প্রথম ৬টি নম্বর দেখানো হবে
+        btn_text = f"{item['country']} {item['number']}"
+        buttons.append(InlineKeyboardButton(btn_text, callback_data=f"select_{item['number']}"))
+    markup.add(*buttons)
+    markup.add(InlineKeyboardButton("🔙 প্রধান মেনু", callback_data="main_menu"))
+    return markup
+
+def get_active_number_menu():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("🔄 Refresh OTP", callback_data="check_otp"),
+        InlineKeyboardButton("❌ নম্বর পরিবর্তন করুন", callback_data="list_numbers")
+    )
+    return markup
+
+# ----------------- Bot Handlers ----------------- #
 
 @bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
+def start_command(message):
     chat_id = message.chat.id
-    has_email = chat_id in user_sessions
     bot.send_message(
         chat_id,
-        "<b>📬 Temp OTP Receiver Bot</b>\n\nনিচের বাটন চেপে ইমেইল তৈরি করুন:",
+        "<b>🌐 Free Virtual Number & OTP Bot</b>\n\n"
+        "সম্পূর্ণ ফ্রিতে সোশ্যাল মিডিয়া ও অ্যাপ ভেরিফিকেশনের জন্য ভার্চুয়াল নম্বর নিতে নিচের বাটনে চাপ দিন:",
         parse_mode="HTML",
-        reply_markup=get_main_menu(has_email)
+        reply_markup=get_main_menu()
     )
 
 @bot.callback_query_handler(func=lambda call: True)
-def handle_callbacks(call):
+def callback_handler(call):
     chat_id = call.message.chat.id
-    
+
     try:
-        if call.data == "gen_email":
-            bot.answer_callback_query(call.id, "Generating Email...⏳")
-            
-            email, token = create_mail_tm_account()
-            user_sessions[chat_id] = {"email": email, "token": token}
-            
-            text = (
-                f"✅ <b>আপনার Temp Mail তৈরি হয়েছে!</b>\n\n"
-                f"<code>{email}</code>\n\n"
-                f"<i>👆 ইমেইলের ওপর চাপ দিলেই কপি হয়ে যাবে।</i>"
-            )
+        if call.data == "main_menu":
             bot.edit_message_text(
-                text, 
-                chat_id, 
-                call.message.message_id, 
-                parse_mode="HTML", 
-                reply_markup=get_main_menu(True)
-            )
-            
-        elif call.data == "check_mail":
-            bot.answer_callback_query(call.id, "Checking Inbox...🔄")
-            session = user_sessions.get(chat_id)
-            
-            if not session:
-                bot.send_message(chat_id, "❌ আপনার কোনো সক্রিয় ইমেইল নেই!")
-                return
-
-            messages = check_messages(session["token"])
-            if not messages:
-                bot.send_message(chat_id, "📭 ইনবক্স এখনো খালি! ওটিপি আসার পর রিফ্রেশ করুন।")
-            else:
-                for msg in messages:
-                    detail = get_message_detail(msg['id'], session["token"])
-                    
-                    sender = detail.get('from', {}).get('address', 'Unknown Service')
-                    subject = detail.get('subject', '')
-                    body = detail.get('text', detail.get('intro', ''))
-                    
-                    # OTP Extract করা
-                    otp_code = extract_otp(subject, body)
-                    
-                    if otp_code:
-                        mail_text = (
-                            f"🔑 <b>Your OTP Received!</b>\n\n"
-                            f"<code>{otp_code}</code>\n\n"
-                            f"👆 <i>ওটিপির ওপর চাপ দিলেই কপি হয়ে যাবে।</i>\n\n"
-                            f"👤 <b>From:</b> {sender}\n"
-                            f"📌 <b>Subject:</b> {subject}"
-                        )
-                    else:
-                        # যদি কোনো সাধারণ ইমেইল হয় যাতে সরাসরি সংখ্যাযুক্ত OTP নেই
-                        mail_text = (
-                            f"📩 <b>নতুন মেসেজ!</b>\n\n"
-                            f"👤 <b>From:</b> {sender}\n"
-                            f"📌 <b>Subject:</b> {subject}\n"
-                            f"📝 <b>Content:</b>\n{body[:300]}"
-                        )
-                    
-                    bot.send_message(chat_id, mail_text, parse_mode="HTML")
-
-        elif call.data == "delete_email":
-            bot.answer_callback_query(call.id, "Email Deleted 🗑️")
-            if chat_id in user_sessions:
-                del user_sessions[chat_id]
-            bot.edit_message_text(
-                "🗑️ ইমেইল মুছে ফেলা হয়েছে। নতুন ইমেইল তৈরি করতে নিচের বাটনে চাপ দিন:",
+                "<b>🌐 Free Virtual Number & OTP Bot</b>\n\nনিচের বাটন থেকে সেবা বেছে নিন:",
                 chat_id,
                 call.message.message_id,
-                reply_markup=get_main_menu(False)
+                parse_mode="HTML",
+                reply_markup=get_main_menu()
+            )
+
+        elif call.data == "list_numbers":
+            bot.answer_callback_query(call.id, "Loading numbers...⏳")
+            numbers = get_free_numbers()
+            bot.edit_message_text(
+                "📋 <b>উপলব্ধ ফ্রি ভার্চুয়াল নম্বরসমূহ:</b>\n\nযেকোনো একটি নম্বরের ওপর ক্লিক করে নির্বাচন করুন:",
+                chat_id,
+                call.message.message_id,
+                parse_mode="HTML",
+                reply_markup=get_number_menu(numbers)
+            )
+
+        elif call.data.startswith("select_"):
+            selected_num = call.data.split("_")[1]
+            user_sessions[chat_id] = {"number": selected_num}
+
+            bot.answer_callback_query(call.id, "Number Selected! Selected ✅")
+            
+            text = (
+                f"✅ <b>আপনার নির্বাচিত ফ্রি নম্বর:</b>\n\n"
+                f"📱 <b>Number:</b> <code>{selected_num}</code>\n\n"
+                f"<i>👆 নম্বরটিতে চাপ দিলে কপি হয়ে যাবে। কাঙ্ক্ষিত অ্যাপে নম্বরটি বসিয়ে OTP পাঠান, তারপর নিচে 'Refresh OTP' বাটনে ক্লিক করুন।</i>"
             )
             
-    except Exception as e:
-        bot.answer_callback_query(call.id, "❌ Error Occurred!")
-        bot.send_message(chat_id, f"⚠️ <b>এরর:</b> {str(e)}", parse_mode="HTML")
+            bot.edit_message_text(
+                text,
+                chat_id,
+                call.message.message_id,
+                parse_mode="HTML",
+                reply_markup=get_active_number_menu()
+            )
 
-# ----------------- Execution ----------------- #
+        elif call.data == "check_otp":
+            session = user_sessions.get(chat_id)
+            if not session or "number" not in session:
+                bot.answer_callback_query(call.id, "❌ কোনো নম্বর সিলেক্ট করা নেই!", show_alert=True)
+                return
+
+            bot.answer_callback_query(call.id, "Checking Inbox...🔄")
+            number = session["number"]
+            otp, full_msg = get_latest_otp(number)
+
+            if otp:
+                msg_text = (
+                    f"🔑 <b>Your OTP Code:</b>\n\n"
+                    f"<code>{otp}</code>\n\n"
+                    f"👆 <i>কপি করতে ওটিপির ওপর চাপ দিন।</i>\n\n"
+                    f"📄 <b>Full Message:</b> {full_msg}"
+                )
+                bot.send_message(chat_id, msg_text, parse_mode="HTML")
+            else:
+                bot.send_message(
+                    chat_id, 
+                    "📭 এখনো নতুন কোনো ওটিপি পাওয়া যায়নি।\n\n"
+                    "<i>কোড পাঠানোর পর ১০-১৫ সেকেন্ড অপেক্ষা করে আবার 'Refresh OTP' চাপুন।</i>",
+                    parse_mode="HTML"
+                )
+
+    except Exception as e:
+        bot.answer_callback_query(call.id, "❌ সমস্যা হয়েছে!")
+        bot.send_message(chat_id, f"⚠️ Error: {str(e)}")
+
+# ----------------- Start Bot ----------------- #
 
 if __name__ == "__main__":
     bot.remove_webhook()
-    print("Bot is running...")
+    print("Bot is working successfully...")
     bot.infinity_polling(skip_pending=True)
-        
