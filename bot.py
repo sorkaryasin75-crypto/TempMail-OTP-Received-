@@ -3,20 +3,14 @@ import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ১. সরাসরি আপনার টেলিগ্রাম বট টোকেন এখানে বসান (উদ্ধৃতি চিহ্ন "" এর ভেতরে)
-BOT_TOKEN = "8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18"
-
-# টোকেন ভ্যালিডেশন চেক
-BOT_TOKEN = BOT_TOKEN.strip()
-if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-    raise ValueError("❌ অনুগ্রহ করে সঠিক Telegram Bot Token টি বসান!")
+# ⚠️ নিশ্চিত করুন এটি আপনার কাঙ্ক্ষিত বটেরই আসল টোকেন
+BOT_TOKEN = "8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18".strip()
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ইউজারদের সক্রিয় ইমেইল সংরক্ষণের স্থান
 user_emails = {}
 
-# 1secmail API Helper Functions
+# 1secmail API Functions
 def generate_temp_email():
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     res = requests.get(url).json()
@@ -32,7 +26,7 @@ def fetch_message(email, msg_id):
     url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
     return requests.get(url).json()
 
-# Dynamic Inline Keyboard Generator
+# Inline Menu Generator
 def get_main_menu(email_exists=False):
     markup = InlineKeyboardMarkup(row_width=2)
     if not email_exists:
@@ -45,19 +39,19 @@ def get_main_menu(email_exists=False):
         markup.add(InlineKeyboardButton("🎲 Generate New Email", callback_data="gen_email"))
     return markup
 
-# /start Command Handler
-@bot.message_handler(commands=['start'])
+# Commands
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
     has_email = chat_id in user_emails
     bot.send_message(
         chat_id,
-        "<b>📬 Temp Mail Bot UI</b>\n\nনিচের বাটনগুলো ব্যবহার করে কার্যক্রম পরিচালনা করুন:",
+        "<b>📬 Temp Mail Bot UI</b>\n\nনিচের বাটনগুলো ব্যবহার করে ইমেইল জেনারেট করুন:",
         parse_mode="HTML",
         reply_markup=get_main_menu(has_email)
     )
 
-# Inline Keyboard Action Handlers
+# Callback Handler
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     chat_id = call.message.chat.id
@@ -111,7 +105,8 @@ def handle_callbacks(call):
             reply_markup=get_main_menu(False)
         )
 
-# Bot Execution
+# Bot Execution & Webhook Reset
 if __name__ == "__main__":
-    print("Bot is starting...")
-    bot.infinity_polling()
+    print("Clearing old webhooks and starting bot...")
+    bot.remove_webhook()
+    bot.infinity_polling(skip_pending=True)
