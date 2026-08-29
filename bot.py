@@ -3,13 +3,20 @@ import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Railway-এর Environment Variable থেকে টোকেন নেবে
-BOT_TOKEN = os.getenv("8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18")
+# ১. সরাসরি আপনার টেলিগ্রাম বট টোকেন এখানে বসান (উদ্ধৃতি চিহ্ন "" এর ভেতরে)
+BOT_TOKEN = "8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18"
+
+# টোকেন ভ্যালিডেশন চেক
+BOT_TOKEN = BOT_TOKEN.strip()
+if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+    raise ValueError("❌ অনুগ্রহ করে সঠিক Telegram Bot Token টি বসান!")
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# ইউজারদের সক্রিয় ইমেইল সংরক্ষণের স্থান
 user_emails = {}
 
-# API Helper Functions
+# 1secmail API Helper Functions
 def generate_temp_email():
     url = "https://www.1secmail.com/api/v1/?action=genRandomMailbox&count=1"
     res = requests.get(url).json()
@@ -25,7 +32,7 @@ def fetch_message(email, msg_id):
     url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={username}&domain={domain}&id={msg_id}"
     return requests.get(url).json()
 
-# Inline Menu Markup Generator
+# Dynamic Inline Keyboard Generator
 def get_main_menu(email_exists=False):
     markup = InlineKeyboardMarkup(row_width=2)
     if not email_exists:
@@ -38,7 +45,7 @@ def get_main_menu(email_exists=False):
         markup.add(InlineKeyboardButton("🎲 Generate New Email", callback_data="gen_email"))
     return markup
 
-# Main Menu Control
+# /start Command Handler
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -50,7 +57,7 @@ def send_welcome(message):
         reply_markup=get_main_menu(has_email)
     )
 
-# Callback Handlers for Inline Keyboards
+# Inline Keyboard Action Handlers
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     chat_id = call.message.chat.id
@@ -104,4 +111,7 @@ def handle_callbacks(call):
             reply_markup=get_main_menu(False)
         )
 
-bot.infinity_polling()
+# Bot Execution
+if __name__ == "__main__":
+    print("Bot is starting...")
+    bot.infinity_polling()
