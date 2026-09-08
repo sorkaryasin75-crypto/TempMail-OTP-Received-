@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Environment Variables / Credentials
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8701243158:AAGoQbU4wGB0R3mpYfY3pdBufYUdXiMqW18")
-TMAILOR_API_KEY = os.getenv("TMAILOR_API_KEY", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlIjoicHprS1pKNVhFVU1QcTFjZ0RLcTBBU3lESTNJaklVeXlHSGc0cXhXMkkzY25xMFMyREhxbm9SV0hGS3lucTBFZ0R5RVJvSDEzRktjbnEwdGtEeGNLcUhrZ3FRT1pFMXEySmFNS0JLQUlKd0lQSEt5ZyJ9.9zcrGKQM9SiTyaR-r_GjgsvCRA1xU5u429vcbUsPzyU")
+TMAILOR_API_KEY = os.getenv("TMAILOR_API_KEY", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlIjoicHprS1pKNVhFVU1QcTFXZ0p4cWpaUldUbmFNWkYwOXdvd1dXQUlNM0xhTU9aeEk2R0lFVm9JY0VyS3lBSVNjZUdLcUZBUmtVSHoxT0Z4ajFESjFub1JTVUdUa0FxMERqR1VxNHFhQVluMjFQRTNEMXBUYjlDRD09In0.-jdyNBa1_4JFdvUAqlHsEOq7EkeZB9Y4BO92DXLa7MM")
 INITIAL_ADMIN_ID = int(os.getenv("ADMIN_UID", "6582650458"))
 
 # Dynamic Admin and User Storage
@@ -36,7 +36,8 @@ def safe_tmailor_request(method, endpoint, json_payload=None, retries=3):
     headers = {
         "Authorization": f"Bearer {TMAILOR_API_KEY}",
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": "Mozilla/5.0 (Linux; Android 15; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
     }
     url = f"{TMAILOR_BASE}{endpoint}"
     
